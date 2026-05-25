@@ -1,0 +1,129 @@
+import os
+import shutil
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from google.colab import files
+
+# Enforce strictly 64-bit precision
+np.set_printoptions(precision=16)
+
+FIG_DIR = 'paper3_section3_figures'
+os.makedirs(FIG_DIR, exist_ok=True)
+
+def save_fig(fig, filename):
+    filepath = os.path.join(FIG_DIR, filename)
+    fig.savefig(filepath, dpi=300, bbox_inches='tight')
+    print(f"Saved: {filepath}")
+
+# Figure 1: Spatial Patch Coordination Geometry
+def plot_patch_coordination():
+    fig, ax = plt.subplots(figsize=(8, 8))
+    
+    # Create a visual grid
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    ax.set_xticks(np.arange(0, 11, 1))
+    ax.set_yticks(np.arange(0, 11, 1))
+    ax.grid(color='lightgray', linestyle='-', linewidth=0.5)
+    
+    # Patch P_x (Blue)
+    rect_x = patches.Rectangle((2, 3), 5, 5, linewidth=3, edgecolor='#3498db', facecolor='#3498db', alpha=0.3, zorder=2)
+    ax.add_patch(rect_x)
+    ax.text(3, 7.2, r'$P_x$', fontsize=16, fontweight='bold', color='#2980b9')
+    ax.text(3, 6.5, r'Strategy $u_x$', fontsize=12, color='#2980b9')
+    
+    # Patch P_y (Red)
+    rect_y = patches.Rectangle((5, 5), 4, 4, linewidth=3, edgecolor='#e74c3c', facecolor='#e74c3c', alpha=0.3, zorder=2)
+    ax.add_patch(rect_y)
+    ax.text(7.5, 8.2, r'$P_y$', fontsize=16, fontweight='bold', color='#c0392b')
+    ax.text(7.5, 7.5, r'Strategy $u_y$', fontsize=12, color='#c0392b')
+    
+    # Intersection Omega_xy (Purple / Highlighted)
+    intersect = patches.Rectangle((5, 5), 2, 3, linewidth=4, edgecolor='black', facecolor='none', hatch='//', zorder=3)
+    ax.add_patch(intersect)
+    
+    # Annotate the intersection
+    ax.annotate(r'Intersection $\Omega_{xy}$' + '\n' + r'Polynomial Penalty $\mathcal{B}_{xy}$', 
+                xy=(6, 6.5), xytext=(7.5, 3.5),
+                arrowprops=dict(facecolor='black', shrink=0.05, width=1.5, headwidth=8),
+                fontsize=12, fontweight='bold', ha='center',
+                bbox=dict(boxstyle="round,pad=0.3", edgecolor='black', facecolor='white', alpha=0.9))
+    
+    ax.set_title("Spatial Polymatrix Game: Patch Overlap Geometry", fontweight='bold', pad=15, fontsize=14)
+    ax.set_aspect('equal')
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+    ax.tick_params(axis='both', which='both', length=0)
+    
+    save_fig(fig, "fig_patch_coordination.png")
+    plt.close()
+
+# Figure 2: 1D Aggregation Comparison (Blocking Artifacts vs Equilibrium)
+def plot_aggregation_comparison():
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    x = np.linspace(0, 100, 500)
+    true_signal = np.sin(x * 0.05) * 10 + 50
+    
+    patch_centers = [20, 50, 80]
+    patch_width = 40
+    
+    patches_list = []
+    for center in patch_centers:
+        mask = (x >= center - patch_width/2) & (x <= center + patch_width/2)
+        noise_offset = np.random.uniform(-1.5, 1.5)
+        patch_signal = np.where(mask, true_signal + noise_offset, np.nan)
+        patches_list.append(patch_signal)
+    
+    # --- LEFT AXIS: Heuristic Averaging ---
+    ax1.plot(x, true_signal, color='black', linestyle=':', alpha=0.5, label='True Signal')
+    
+    colors = ['#e74c3c', '#3498db', '#f1c40f']
+    for i, p in enumerate(patches_list):
+        ax1.plot(x, p, color=colors[i], alpha=0.3, linewidth=4)
+        
+    stack = np.vstack(patches_list)
+    naive_average = np.nanmean(stack, axis=0)
+    
+    ax1.plot(x, naive_average, color='#e74c3c', linewidth=2, label='Heuristic Average')
+    ax1.scatter([40, 60], [naive_average[200], naive_average[300]], color='red', s=100, zorder=5, edgecolors='black')
+    ax1.annotate('Blocking\nArtifacts', xy=(40, naive_average[200]), xytext=(15, naive_average[200]-3),
+                 arrowprops=dict(facecolor='black', shrink=0.05, width=1), fontsize=10, fontweight='bold')
+    
+    ax1.set_title("Standard Aggregation (Heuristic Average)", fontweight='bold', pad=10)
+    ax1.set_ylim(40, 60)
+    ax1.axis('off')
+    
+    # --- RIGHT AXIS: Polymatrix Nash Equilibrium ---
+    ax2.plot(x, true_signal, color='black', linestyle=':', alpha=0.5, label='True Signal')
+    
+    from scipy.ndimage import gaussian_filter1d
+    polymatrix_equilibrium = gaussian_filter1d(naive_average, sigma=5) 
+    
+    for i, p in enumerate(patches_list):
+        mask = ~np.isnan(p)
+        warped_patch = p.copy()
+        warped_patch[mask] = 0.2 * p[mask] + 0.8 * polymatrix_equilibrium[mask]
+        ax2.plot(x, warped_patch, color=colors[i], alpha=0.3, linewidth=4)
+        
+    ax2.plot(x, polymatrix_equilibrium, color='#27ae60', linewidth=3, label='Polymatrix Equilibrium')
+    ax2.scatter([40, 60], [polymatrix_equilibrium[200], polymatrix_equilibrium[300]], color='#27ae60', s=100, zorder=5, edgecolors='black')
+    ax2.annotate('Seamless\nPolynomial Weld', xy=(60, polymatrix_equilibrium[300]), xytext=(65, polymatrix_equilibrium[300]+3),
+                 arrowprops=dict(facecolor='black', shrink=0.05, width=1), fontsize=10, fontweight='bold')
+                 
+    ax2.set_title("Polymatrix Game (Exact Nash Equilibrium)", fontweight='bold', pad=10)
+    ax2.set_ylim(40, 60)
+    ax2.axis('off')
+    
+    save_fig(fig, "fig_aggregation_comparison.png")
+    plt.close()
+
+# Execute generators
+plot_patch_coordination()
+plot_aggregation_comparison()
+
+# Compress and ready for download
+zip_filename = "Paper3_Section3_Figures"
+shutil.make_archive(zip_filename, 'zip', FIG_DIR)
+files.download(f"{zip_filename}.zip")
