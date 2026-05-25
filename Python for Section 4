@@ -1,0 +1,139 @@
+import os
+import shutil
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from google.colab import files
+
+# Enforce strictly 64-bit precision
+np.set_printoptions(precision=16)
+
+FIG_DIR = 'paper3_section4_figures_final'
+os.makedirs(FIG_DIR, exist_ok=True)
+
+def save_fig(fig, filename):
+    filepath = os.path.join(FIG_DIR, filename)
+    fig.savefig(filepath, dpi=300, bbox_inches='tight')
+    print(f"Saved: {filepath}")
+
+# Figure 1: The Spatio-Spectral Tensor Network (Tight Fix)
+def plot_tensor_network():
+    fig = plt.figure(figsize=(10, 8)) 
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Grid dimensions
+    num_bands = 3      
+    grid_size = 3      
+    
+    x, y = np.meshgrid(np.arange(grid_size), np.arange(grid_size))
+    x = x.flatten()
+    y = y.flatten()
+    
+    layer_colors = ['#3498db', '#2ecc71', '#e74c3c'] 
+    
+    # Draw Nodes and Spatial Edges (Horizontal Games)
+    for z in range(num_bands):
+        z_vals = np.full_like(x, z) * 1.5
+        ax.scatter(x, y, z_vals, color=layer_colors[z], s=300, depthshade=True, edgecolors='black', alpha=0.9)
+        
+        for i in range(len(x)):
+            for j in range(i+1, len(x)):
+                if abs(x[i] - x[j]) + abs(y[i] - y[j]) == 1:
+                    ax.plot([x[i], x[j]], [y[i], y[j]], [z_vals[i], z_vals[j]], color='gray', alpha=0.5, linewidth=2)
+                    
+    # Draw Spectral Edges (Vertical Games)
+    for i in range(len(x)):
+        for z in range(num_bands - 1):
+            z1, z2 = z * 1.5, (z + 1) * 1.5
+            ax.plot([x[i], x[i]], [y[i], y[i]], [z1, z2], color='black', alpha=0.7, linewidth=2.5, linestyle='--')
+            
+    ax.view_init(elev=20, azim=45)
+    
+    # TIGHTEN LIMITS: Shrink the bounding box to perfectly hug the data
+    ax.set_xlim(-0.5, grid_size - 0.5)
+    ax.set_ylim(-0.5, grid_size - 0.5)
+    ax.set_zlim(-0.2, (num_bands - 1) * 1.5 + 0.5)
+    
+    ax.set_xlabel('Spatial Dimension X (Patches)', fontweight='bold', labelpad=10)
+    ax.set_ylabel('Spatial Dimension Y (Patches)', fontweight='bold', labelpad=10)
+    ax.set_zlabel('Spectral Dimension (Bands)', fontweight='bold', labelpad=10)
+    
+    # DECOUPLE TEXT: Use 2D axes fractions so the text hovers perfectly
+    bbox_props = dict(boxstyle="round,pad=0.4", fc="white", ec="black", lw=1.5, alpha=0.95)
+    
+    ax.text2D(0.85, 0.70, r'Vertical: Spectral Games $J_{i,j}$', 
+              transform=ax.transAxes, color='black', fontweight='bold', ha='center', bbox=bbox_props)
+            
+    ax.text2D(0.05, 0.20, r'Horizontal: Spatial Games $\mathcal{B}_{xy}$', 
+              transform=ax.transAxes, color='black', fontweight='bold', ha='left', bbox=bbox_props)
+    
+    ax.set_title("Spatio-Spectral Tensor Game Topology\nBipartite Coordination Network", fontweight='bold', pad=20, fontsize=14)
+    
+    ax.grid(False)
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
+    
+    save_fig(fig, "fig_tensor_network.png")
+    plt.close()
+
+# Figure 2: Physical Hardware Boundaries
+def plot_hardware_boundaries():
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    dim_x, dim_y, dim_z = 5, 5, 4
+    x, y, z = np.meshgrid(np.arange(dim_x), np.arange(dim_y), np.arange(dim_z))
+    x = x.flatten()
+    y = y.flatten()
+    z = z.flatten()
+    
+    is_boundary_x = (x == 0) | (x == dim_x - 1)
+    is_boundary_y = (y == 0) | (y == dim_y - 1)
+    is_boundary_z = (z == 0) | (z == dim_z - 1)
+    is_boundary = is_boundary_x | is_boundary_y | is_boundary_z
+    
+    # Plot Interior Agents (Blue)
+    ax.scatter(x[~is_boundary], y[~is_boundary], z[~is_boundary], 
+               color='#3498db', s=100, alpha=0.6, edgecolors='black', label='Interior Agents (Full Adjacency)')
+               
+    # Plot Boundary Agents (Red)
+    ax.scatter(x[is_boundary], y[is_boundary], z[is_boundary], 
+               color='#e74c3c', s=150, alpha=0.9, edgecolors='black', label='Boundary Agents (Truncated Adjacency)')
+    
+    corners = [[0,0,0], [dim_x-1,0,0], [dim_x-1,dim_y-1,0], [0,dim_y-1,0],
+               [0,0,dim_z-1], [dim_x-1,0,dim_z-1], [dim_x-1,dim_y-1,dim_z-1], [0,dim_y-1,dim_z-1]]
+    corners = np.array(corners)
+    
+    edges = [(0,1), (1,2), (2,3), (3,0), (4,5), (5,6), (6,7), (7,4), (0,4), (1,5), (2,6), (3,7)]
+    for edge in edges:
+        ax.plot3D(*zip(corners[edge[0]], corners[edge[1]]), color='black', linewidth=1.5, linestyle='--')
+        
+    ax.view_init(elev=25, azim=35)
+    ax.set_xlim(-0.5, dim_x - 0.5)
+    ax.set_ylim(-0.5, dim_y - 0.5)
+    ax.set_zlim(-0.5, dim_z - 0.5)
+    
+    ax.set_xlabel('Spatial Width (Pixels)', fontweight='bold')
+    ax.set_ylabel('Spatial Height (Pixels)', fontweight='bold')
+    ax.set_zlabel('Spectral Range ($\lambda_{min}$ to $\lambda_{max}$)', fontweight='bold')
+    ax.set_title("Physical Hardware Mapping of the Tensor Game\nBoundary Constraints & GPU Execution", fontweight='bold', pad=20)
+    
+    ax.legend(loc='upper left', bbox_to_anchor=(0.05, 0.95))
+    
+    ax.grid(True, linestyle=':', alpha=0.5)
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
+    
+    save_fig(fig, "fig_hardware_boundaries.png")
+    plt.close()
+
+# Execute both generators
+plot_tensor_network()
+plot_hardware_boundaries()
+
+# Compress and ready for download
+zip_filename = "Paper3_Section4_Final_Figures"
+shutil.make_archive(zip_filename, 'zip', FIG_DIR)
+files.download(f"{zip_filename}.zip")
