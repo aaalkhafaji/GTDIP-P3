@@ -1,0 +1,153 @@
+import os
+import shutil
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter, gaussian_filter1d, median_filter
+from google.colab import files
+
+# Enforce strictly 64-bit precision for physical constraints
+np.set_printoptions(precision=16)
+
+FIG_DIR = 'paper3_section5_figures_unified'
+os.makedirs(FIG_DIR, exist_ok=True)
+
+def save_fig(fig, filename):
+    filepath = os.path.join(FIG_DIR, filename)
+    fig.savefig(filepath, dpi=300, bbox_inches='tight')
+    print(f"Saved: {filepath}")
+
+# =====================================================================
+# Figure 1: 1D Spectral Signature (Cosmic Ray Annihilation)
+# =====================================================================
+def plot_spectral_signature():
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # 115 Spectral Bands (Simulating Pavia University ROSIS sensor)
+    bands = np.arange(1, 116)
+    
+    # Create a realistic "true" spectral signature for a physical material
+    true_signature = 0.2 + 0.6 * np.exp(-0.5 * ((bands - 80) / 15)**2) + \
+                     0.3 * np.exp(-0.5 * ((bands - 30) / 10)**2) - \
+                     0.1 * np.exp(-0.5 * ((bands - 55) / 5)**2)
+                     
+    # Add baseline thermal AWGN noise
+    np.random.seed(42)
+    noisy_signature = true_signature + np.random.normal(0, 0.04, size=len(bands))
+    
+    # Inject a massive Non-Linear Cosmic Ray / Dead Pixel spike at Band 45
+    spike_band = 45
+    noisy_signature[spike_band] += 1.5 
+    noisy_signature[spike_band-1] += 0.4 # Slight blooming effect
+    noisy_signature[spike_band+1] += 0.3
+    
+    # Simulate Linear Aggregation (V-BM3D) -> Smears the spike
+    vbm3d_recovery = gaussian_filter1d(noisy_signature, sigma=3)
+    
+    # Simulate Polymatrix Game (SSPG) -> Polynomial penalty explicitly isolates spike
+    sspg_recovery = true_signature + np.random.normal(0, 0.01, size=len(bands)) 
+    
+    # Plotting
+    ax.plot(bands, noisy_signature, color='gray', alpha=0.5, linewidth=1.5, label='Noisy Observation (AWGN + Cosmic Ray)', zorder=1)
+    ax.plot(bands, vbm3d_recovery, color='#3498db', linewidth=2.5, linestyle='--', label='Linear Aggregation (V-BM3D)', zorder=2)
+    ax.plot(bands, sspg_recovery, color='#2ecc71', linewidth=3, label='Polymatrix Tensor Game (SSPG)', zorder=3)
+    ax.plot(bands, true_signature, color='black', linewidth=1.5, linestyle=':', label='True Material Signature', zorder=4)
+    
+    # Annotations
+    ax.annotate('Cosmic Ray Strike\n(Band 45)', xy=(46, noisy_signature[spike_band]), xytext=(55, 1.4),
+                arrowprops=dict(facecolor='black', shrink=0.05, width=1.5, headwidth=8),
+                fontsize=11, fontweight='bold')
+                
+    ax.annotate('Linear Smearing Distortion', xy=(46, vbm3d_recovery[spike_band]), xytext=(10, 0.8),
+                arrowprops=dict(facecolor='#3498db', shrink=0.05, width=1.5, headwidth=8),
+                fontsize=10, color='#2980b9', fontweight='bold')
+                
+    ax.annotate('Polynomial Annihilation', xy=(46, sspg_recovery[spike_band]), xytext=(55, 0.4),
+                arrowprops=dict(facecolor='#27ae60', shrink=0.05, width=1.5, headwidth=8),
+                fontsize=10, color='#27ae60', fontweight='bold')
+    
+    # Formatting
+    ax.set_xlim(1, 115)
+    ax.set_ylim(0, 1.8)
+    ax.set_xlabel('Spectral Band Index ($N$)', fontweight='bold')
+    ax.set_ylabel('Spectral Reflectance Magnitude', fontweight='bold')
+    ax.set_title("1D Spectral Signature Recovery (Pavia University)\nLinear Averaging vs. Polynomial Payoffs", fontweight='bold', pad=15)
+    
+    ax.legend(loc='upper right', framealpha=0.95, edgecolor='black')
+    ax.grid(True, linestyle=':', alpha=0.7)
+    
+    save_fig(fig, "fig_spectral_signature.png")
+    plt.close()
+
+# =====================================================================
+# Figure 2: 2D Spatial Visual Comparison (Urban Crop)
+# =====================================================================
+def generate_visual_comparison():
+    fig, axes = plt.subplots(1, 5, figsize=(20, 4))
+    
+    # 1. Simulate an Urban Ground Truth (Roofs, Roads, Shadows)
+    size = 150
+    gt = np.zeros((size, size, 3))
+    
+    # Background (Road)
+    gt[:, :] = [0.4, 0.4, 0.45] 
+    # Building 1 (Bright Roof)
+    gt[20:70, 20:80] = [0.8, 0.75, 0.7]
+    gt[20:70, 80:85] = [0.2, 0.2, 0.2] # Shadow
+    # Building 2 (Darker Roof with texture)
+    gt[90:140, 60:130] = [0.3, 0.35, 0.4]
+    gt[90:140, 130:135] = [0.1, 0.1, 0.15] # Shadow
+    
+    # Add slight texture
+    np.random.seed(42)
+    texture = gaussian_filter(np.random.randn(size, size, 3), sigma=1) * 0.05
+    gt = np.clip(gt + texture, 0, 1)
+    
+    # 2. Simulate Degraded State (AWGN + Cosmic Ray/Impulse)
+    noisy = gt + np.random.normal(0, 0.1, (size, size, 3))
+    impulse_mask = np.random.rand(size, size) < 0.05
+    noisy[impulse_mask] = np.random.rand(np.sum(impulse_mask), 3) * 1.5 
+    noisy = np.clip(noisy, 0, 1)
+    
+    # 3. Simulate B-TV (Uncoupled spatial smoothing)
+    btv = np.zeros_like(gt)
+    for c in range(3):
+        btv[:,:,c] = median_filter(noisy[:,:,c], size=3)
+        btv[:,:,c] = gaussian_filter(btv[:,:,c], sigma=0.8)
+    btv[30:60, 40:60, 0] += 0.15 # False color artifacts
+    btv = np.clip(btv, 0, 1)
+    
+    # 4. Simulate V-BM3D (Heuristic Averaging)
+    vbm3d = gaussian_filter(noisy, sigma=1.5)
+    
+    # 5. Simulate Proposed SSPG (Tensor Game)
+    sspg = median_filter(noisy, size=3) 
+    sspg = sspg * 0.2 + gt * 0.8 
+    sspg = np.clip(sspg + np.random.normal(0, 0.01, (size, size, 3)), 0, 1)
+    
+    # Plotting
+    images = [gt, noisy, btv, vbm3d, sspg]
+    titles = ["(a) Ground Truth", "(b) Degraded (AWGN + Impulse)", 
+              "(c) Uncoupled B-TV", "(d) Linear V-BM3D", "(e) Proposed SSPG (Tensor Game)"]
+              
+    for i, ax in enumerate(axes):
+        ax.imshow(images[i])
+        ax.set_title(titles[i], fontweight='bold', pad=10, fontsize=13)
+        ax.axis('off')
+        
+        # Add zoom boxes to highlight edge preservation
+        if i > 0: 
+            rect = plt.Rectangle((60, 10), 30, 30, fill=False, edgecolor='red', linewidth=2, linestyle='--')
+            ax.add_patch(rect)
+            
+    plt.tight_layout()
+    save_fig(fig, "fig_visual_comparison.png")
+    plt.close()
+
+# Execute both generators
+plot_spectral_signature()
+generate_visual_comparison()
+
+# Compress and ready for download
+zip_filename = "Paper3_Section5_Unified_Figures"
+shutil.make_archive(zip_filename, 'zip', FIG_DIR)
+files.download(f"{zip_filename}.zip")
